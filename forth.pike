@@ -20,6 +20,8 @@ class ForthInterpreter {
 			int addr=stack[-1]; stack[-1]=heap[addr]; } }),
 		"i":    ({ "prim", lambda() {
 			stack += ({ rstack[-1][1] }); } }),
+		".s": ({ "prim", lambda() {
+			write("Stack: %O\n", stack); } }),
 		"words":({ "prim", lambda() {
 			write(sort(indices(dictionary))*", " + "\n"); } })
 	]);
