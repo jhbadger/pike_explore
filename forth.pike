@@ -189,6 +189,48 @@ class Forth {
 					}
 					continue;
 				}
+
+				if (t == "see") {
+					string name = tokens[++i];
+					if (!dict[name]) {
+						write("Unknown word: %s\n", name);
+						continue;
+					}
+					array entry = dict[name];
+					if (entry[0] == "prim") {
+						write("%s is a primitive\n", name);
+					} else if (entry[0] == "word" || entry[0] == "defining") {
+						array code = entry[0] == "defining" ? entry[1] : entry[1];
+						write(": %s\n", name);
+						foreach(code, array ins) {
+							switch(ins[0]) {
+							case "lit":     write("  lit %d\n", ins[1]);    break;
+							case "strlit":  write("  .\" %s\"\n", ins[1]);  break;
+							case "call":    write("  %s\n", ins[1]);         break;
+							case "branch":  write("  branch %d\n", ins[1]); break;
+							case "0branch": write("  0branch %d\n", ins[1]);break;
+							case "(do)":    write("  do\n");                 break;
+							case "(loop)":  write("  loop\n");               break;
+							case "exit":    write("  exit\n");               break;
+							default:        write("  %O\n", ins);            break;
+							}
+						}
+						if (entry[0] == "defining") {
+							write("does>\n");
+            foreach(entry[2], array ins) {
+							switch(ins[0]) {
+							case "call":   write("  %s\n", ins[1]);  break;
+							case "exit":   write("  exit\n");        break;
+							default:       write("  %O\n", ins);     break;
+							}
+            }
+						}
+						write(";\n");
+					} else if (entry[0] == "create") {
+						write("%s is a created word, body addr=%d\n", name, entry[1]);
+					}
+					continue;
+				}
 				
 				if (t == ":") {
 					current  = tokens[++i];
