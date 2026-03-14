@@ -45,8 +45,11 @@ class ForthInterpreter {
 					else if (tokens[pc] == "then") depth--;
 				}
 			} else if (token == "do") {
-				int limit = stack[-1]; int start = stack[-2];
-				stack = stack[..<-3];
+				// We want to pull both off: 0 (start) and 10 (limit)
+				int start = stack[-1];
+				int limit = stack[-2];
+				// Explicitly shrink the array by 2
+				stack = stack[..sizeof(stack) - 3];
 				rstack += ({ ({ pc, start, limit }) });
 			} else if (token == "loop") {
 				array frame = rstack[-1];
