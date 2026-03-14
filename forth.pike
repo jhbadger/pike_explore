@@ -46,25 +46,25 @@ class Forth {
 	}
 
 	void run_word(string w) {
-		if (dict[w]) {
+    if (dict[w]) {
 			array entry = dict[w];
 			if (entry[0] == "prim") {
 				entry[1]();
 			} else if (entry[0] == "word") {
 				run(entry[1]);
 			} else if (entry[0] == "create") {
-				// entry = ({"create", body_addr, does_code})
-				// Push the body address, then run the does> behavior
+				// push body address, then run does> code
 				push(entry[1]);
 				if (sizeof(entry[2]) > 0)
 					run(entry[2]);
 			}
+			// "defining" entries are only invoked via process(), not run_word()
 			return;
-		}
+    }
 
-		int n;
-		if (sscanf(w, "%d", n)) { push(n); return; }
-		error("Unknown word: %s\n", w);
+    int n;
+    if (sscanf(w, "%d", n)) { push(n); return; }
+    error("Unknown word: %s\n", w);
 	}
 
 	void init_prims() {
@@ -76,6 +76,8 @@ class Forth {
 		dict["mod"] = ({"prim", lambda(){ int b=pop(),a=pop(); push(a%b); }});
 
 		/* stack */
+		dict[">r"] = ({"prim", lambda(){ rpush(pop()); }});
+		dict["r>"] = ({"prim", lambda(){ push(rpop()); }});
 		dict["dup"]  = ({"prim", lambda(){ push(stack[-1]); }});
 		dict["drop"] = ({"prim", lambda(){ pop(); }});
 		dict["swap"] = ({"prim", lambda(){ int b=pop(),a=pop(); push(b); push(a); }});
@@ -134,23 +136,27 @@ class Forth {
 			if (t == "\\") break;
 
 			// ( comment: skip tokens until closing )
+			// ( comment: skip tokens until closing )
 			if (t == "(") {
+				i++;  // move past "("
 				while (i < sizeof(tokens) && tokens[i] != ")") i++;
+				// i now points at ")" (or end), continue will increment past it
 				continue;
 			}
 				
 			if (!compiling) {
-				if (t == "variable") {
-					string name = tokens[++i];
-					int addr = sizeof(heap);
-					heap += ({0});
-					dict[name] = ({"word", ({
-													 ({"lit", addr}),
-													 ({"exit"})
-												 })});
+				if (t == "load") {
+					string filename = tokens[++i];
+					string src = Stdio.read_file(filename);
+					if (!src) { write("Cannot open %s\n", filename); continue; }
+					foreach(src / "\n", string line) {
+						line = String.trim(line);
+						if (line == "") continue;
+						process((line / " ") - ({""}));
+					}
 					continue;
 				}
-
+				
 				if (t == ":") {
 					current  = tokens[++i];
 					prog     = ({});
@@ -159,15 +165,31 @@ class Forth {
 					continue;
 				}
 
+				if (dict[t] && dict[t][0] == "defining") {
+					string new_name = tokens[++i];
+					int body_addr = sizeof(heap);
+					heap += ({0});
+					array does_code = dict[t][2];
+					dict[new_name] = ({"create", body_addr, does_code});
+					push(body_addr);   // init_code expects body addr on stack
+					run(dict[t][1]);   // run the init_code (before does>)
+					continue;
+				}
+				
 				run_word(t);
 				continue;
 			}
 
 			/* ── compile mode ── */
 
+			if (t == "create") {
+				// Nothing to emit — just skip it in the compiled body.
+				continue;
+			}
+			
 			if (t == ";") {
 				emit(({"exit"}));
-
+			
 				if (does_pos >= 0) {
 					// Split prog at does_pos:
 					// init_code runs at definition time (between : and does>)
@@ -241,22 +263,23 @@ class Forth {
 	// See note below.
 
 	void repl() {
-		init_prims();
-
-		// __create__ is a runtime primitive that:
-		// creates a new "create"-type dict entry for the NEXT token.
-		// We handle this in the REPL loop by peeking ahead, but the
-		// cleanest approach is to make defining words work token-by-token.
-		// See the defining-word execution in run_word below.
-
-		write("Mini Pike Forth\n");
-		while (1) {
+    init_prims();
+    write("Mini Pike Forth\n");
+    string src = Stdio.read_file("stdlib.fs");
+    if (src) {
+			foreach(src / "\n", string line) {
+				line = String.trim(line);
+				if (line == "") continue;
+				process((line / " ") - ({""}));
+			}
+    }
+    while (1) {
 			write("> ");
 			string line = Stdio.stdin->gets();
-			if (!line || line == "bye\n") break;
-			process(line / " ");
+			if (!line || line == "bye") break;
+			process((line / " ") - ({""}));
 			write(" ok\n");
-		}
+    }
 	}
 }
 
