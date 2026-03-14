@@ -12,10 +12,21 @@ class Forth {
 	array cstack = ({});
 	int does_pos = -1;   // NEW: position in prog where does> starts
 
+	mixed pop() {
+    if (sizeof(stack) == 0) error("Stack underflow\n");
+    mixed v = stack[-1];
+    stack = stack[..<1];
+    return v;
+	}
+
+	mixed rpop() {
+    if (sizeof(rstack) == 0) error("Return stack underflow\n");
+    mixed v = rstack[-1];
+    rstack = rstack[..<1];
+    return v;
+	}
 	void push(mixed v) { stack += ({v}); }
-	mixed pop() { mixed v = stack[-1]; stack = stack[..<1]; return v; }
 	void rpush(mixed v) { rstack += ({v}); }
-	mixed rpop() { mixed v = rstack[-1]; rstack = rstack[..<1]; return v; }
 	void emit(array ins) { prog += ({ins}); }
 
 	void run(array code) {
@@ -23,6 +34,7 @@ class Forth {
 			array ins = code[pc];
 			switch(ins[0]) {
 			case "lit":   push(ins[1]); break;
+			case "strlit": write(ins[1]); break;
 			case "call":  run_word(ins[1]); break;
 			case "branch":  pc = ins[1]-1; break;
 			case "0branch": if (pop() == 0) pc = ins[1]-1; break;
@@ -128,6 +140,19 @@ class Forth {
 		}});
 	}
 
+	array(string|int) collect_string(array tokens, int i) {
+    string result = "";
+    while (i + 1 < sizeof(tokens)) {
+			i++;
+			if (tokens[i][-1] == '"') {
+				result += tokens[i][..<1];
+				return ({result, i});
+			}
+			result += tokens[i] + " ";
+    }
+    error("Unterminated .\" string\n");
+	}
+	
 	void process(array tokens) {
 		for (int i = 0; i < sizeof(tokens); i++) {
 			string t = tokens[i];
@@ -143,7 +168,15 @@ class Forth {
 				// i now points at ")" (or end), continue will increment past it
 				continue;
 			}
-				
+			if (t == ".\"") {
+				[string s, i] = collect_string(tokens, i);
+				if (!compiling)
+					write(s);
+				else
+					emit(({"strlit", s}));
+				continue;
+			}
+
 			if (!compiling) {
 				if (t == "load") {
 					string filename = tokens[++i];
@@ -258,27 +291,36 @@ class Forth {
 		}
 	}
 
-	// Called at runtime when a defining word executes CREATE
-	// Grabs the next word name from... wait, we need a different approach.
-	// See note below.
-
 	void repl() {
     init_prims();
     write("Mini Pike Forth\n");
-    string src = Stdio.read_file("stdlib.fs");
+		string stdlib_path = dirname(System.resolvepath(__FILE__)) + "/stdlib.fs";
+    string src = Stdio.read_file(stdlib_path);
     if (src) {
 			foreach(src / "\n", string line) {
 				line = String.trim(line);
 				if (line == "") continue;
-				process((line / " ") - ({""}));
+				mixed err = catch(process((line / " ") - ({""})));
+				if (err) write("stdlib error: %s", describe_error(err));
 			}
     }
     while (1) {
 			write("> ");
 			string line = Stdio.stdin->gets();
 			if (!line || line == "bye") break;
-			process((line / " ") - ({""}));
-			write(" ok\n");
+			mixed err = catch(process((line / " ") - ({""})));
+			if (err) {
+				write("Error: %s", describe_error(err));
+				// Reset interpreter state so it's usable after an error
+				stack   = ({});
+				rstack  = ({});
+				cstack  = ({});
+				prog    = ({});
+				compiling = 0;
+				does_pos  = -1;
+			} else {
+				write(" ok\n");
+			}
     }
 	}
 }
