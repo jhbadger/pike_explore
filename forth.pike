@@ -1,3 +1,5 @@
+#!/usr/bin/env pike
+
 class ForthInterpreter {
 	array stack = ({});
 	array rstack = ({});
