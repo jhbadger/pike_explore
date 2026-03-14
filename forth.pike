@@ -4,6 +4,7 @@ class Forth {
 	array stack = ({});
 	array rstack = ({});
 	array heap = ({});
+	array locals = ({});
 	mapping dict = ([]);
 
 	int compiling = 0;
@@ -39,6 +40,20 @@ class Forth {
 			case "branch":  pc = ins[1]-1; break;
 			case "0branch": if (pop() == 0) pc = ins[1]-1; break;
 			case "exit":    return;
+			case "local@":
+				// ins[1] is the frame offset from top of rstack locals frame
+				push(rstack[-1][ins[1]]);
+				break;
+			case "local!":
+				rstack[-1][ins[1]] = pop();
+				break;
+			case "locals-enter":
+				// ins[1] is number of locals -- push a frame of that size
+				rpush(allocate(ins[1], 0));
+				break;
+			case "locals-exit":
+				rpop();
+				break;
 			case "(do)":
 				{ int start = pop(), limit = pop();
 					rpush(({start, limit})); }
@@ -217,13 +232,13 @@ class Forth {
 						}
 						if (entry[0] == "defining") {
 							write("does>\n");
-            foreach(entry[2], array ins) {
-							switch(ins[0]) {
-							case "call":   write("  %s\n", ins[1]);  break;
-							case "exit":   write("  exit\n");        break;
-							default:       write("  %O\n", ins);     break;
+							foreach(entry[2], array ins) {
+								switch(ins[0]) {
+								case "call":   write("  %s\n", ins[1]);  break;
+								case "exit":   write("  exit\n");        break;
+								default:       write("  %O\n", ins);     break;
+								}
 							}
-            }
 						}
 						write(";\n");
 					} else if (entry[0] == "create") {
@@ -261,29 +276,25 @@ class Forth {
 				// Nothing to emit — just skip it in the compiled body.
 				continue;
 			}
-			
-			if (t == ";") {
-				emit(({"exit"}));
-			
-				if (does_pos >= 0) {
-					// Split prog at does_pos:
-					// init_code runs at definition time (between : and does>)
-					// does_code runs each time a created word is called
-					array init_code = prog[..does_pos-1];  // up to does>
-					array does_code = prog[does_pos..];     // after does> (includes exit)
 
-					// The defining word: when run, executes init_code, which
-					// must have left a "create" entry ready to receive does_code.
+			if (t == ";") {
+				if (sizeof(locals) > 0)
+					emit(({"locals-exit"}));
+				emit(({"exit"}));
+				locals = ({});   // clear locals for next definition
+				
+				if (does_pos >= 0) {
+					array init_code = prog[..does_pos-1];
+					array does_code = prog[does_pos..];
 					dict[current] = ({"defining", init_code, does_code});
 				} else {
 					dict[current] = ({"word", prog});
 				}
-
 				compiling = 0;
 				does_pos  = -1;
 				continue;
 			}
-
+			
 			if (t == "does>") {
 				// Mark the split point — everything after here is does_code
 				does_pos = sizeof(prog);
@@ -326,7 +337,42 @@ class Forth {
 				emit(({"(loop)", addr}));
 				continue;
 			}
+			if (t == "{") {
+				array all = ({});
+				while (i + 1 < sizeof(tokens)) {
+					i++;
+					if (tokens[i] == "}") break;
+					all += ({tokens[i]});
+				}
+				// split on -- and keep only the left side
+				array names = ({});
+				foreach(all, string tok) {
+					if (tok == "--") break;
+					names += ({tok});
+				}
+				emit(({"locals-enter", sizeof(names)}));
+				for (int j = sizeof(names)-1; j >= 0; j--)
+					emit(({"local!", j}));
+				locals = names;
+				continue;
+			}
 
+			// check if token is a known local
+			int local_idx = search(locals, t);
+			if (local_idx >= 0) {
+				emit(({"local@", local_idx}));
+				continue;
+			}
+			
+			// check for local store:  n -> localname  (using -> as store syntax)
+			if (t == "->") {
+				string lname = tokens[++i];
+				int lidx = search(locals, lname);
+				if (lidx < 0) error("Unknown local: %s\n", lname);
+				emit(({"local!", lidx}));
+				continue;
+			}
+			
 			int n;
 			if (sscanf(t, "%d", n)) { emit(({"lit", n})); continue; }
 			emit(({"call", t}));
