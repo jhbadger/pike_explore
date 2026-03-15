@@ -12,6 +12,7 @@ class Forth {
 	array prog = ({});
 	array cstack = ({});
 	int does_pos = -1;   // NEW: position in prog where does> starts
+	int base = 10;
 
 	mixed pop() {
     if (sizeof(stack) == 0) error("Stack underflow\n");
@@ -30,6 +31,29 @@ class Forth {
 	void rpush(mixed v) { rstack += ({v}); }
 	void emit(array ins) { prog += ({ins}); }
 
+	string format_int(int n, int b) {
+    if (n == 0) return "0";
+    string digits = "0123456789abcdef";
+    string result = "";
+    int neg = n < 0;
+    if (neg) n = -n;
+    while (n > 0) { result = digits[n % b .. n % b] + result; n /= b; }
+    return neg ? "-" + result : result;
+	}
+
+	array try_parse_number(string t) {
+    int neg = (sizeof(t) > 0 && t[0] == '-');
+    string s = neg ? t[1..] : t;
+    if (sizeof(s) == 0) return ({0, 0});
+    int n = 0;
+    foreach(s / "", string c) {
+			int d = search("0123456789abcdef", lower_case(c));
+			if (d < 0 || d >= base) return ({0, 0});
+			n = n * base + d;
+    }
+    return ({1, neg ? -n : n});
+	}
+	
 	void run(array code) {
 		for (int pc = 0; pc < sizeof(code); pc++) {
 			array ins = code[pc];
@@ -88,9 +112,8 @@ class Forth {
 			// "defining" entries are only invoked via process(), not run_word()
 			return;
     }
-
-    int n;
-    if (sscanf(w, "%d", n)) { push(n); return; }
+		array parsed = try_parse_number(w);
+		if (parsed[0]) { push(parsed[1]); return; }
     error("Unknown word: %s\n", w);
 	}
 
@@ -117,6 +140,14 @@ class Forth {
 		dict[">"]  = ({"prim", lambda(){ int b=pop(),a=pop(); push(a>b); }});
 		dict["0="] = ({"prim", lambda(){ push(pop()==0); }});
 
+		/* bases */
+		dict["hex"]     = ({"prim", lambda(){ base = 16; }});
+		dict["decimal"] = ({"prim", lambda(){ base = 10; }});
+		dict["octal"]   = ({"prim", lambda(){ base = 8;  }});
+		dict["binary"]  = ({"prim", lambda(){ base = 2;  }});
+		dict["base"]    = ({"prim", lambda(){ push(base); }});
+		dict["base!"]   = ({"prim", lambda(){ base = pop(); }});
+
 		/* memory */
 		dict["@"] = ({"prim", lambda(){
 			int addr = pop();
@@ -135,7 +166,8 @@ class Forth {
 		dict["cells"] = ({"prim", lambda(){ /* cells are 1 unit each, no-op */ }});
 
 		/* output */
-		dict["."]     = ({"prim", lambda(){ write("%d ", pop()); }});
+		dict["."]     = ({"prim", lambda(){ write("%s ", format_int(pop(),
+																																base)); }});
 		dict["emit"]  = ({"prim", lambda(){ write("%c", pop()); }});
 		dict["cr"]    = ({"prim", lambda(){ write("\n"); }});
 		dict[".s"]    = ({"prim", lambda(){ write("Stack: %O\n", stack); }});
@@ -369,9 +401,8 @@ class Forth {
 				emit(({"local!", lidx, lname}));
 				continue;
 			}
-
-			int n;
-			if (sscanf(t, "%d", n)) { emit(({"lit", n})); continue; }
+			array parsed = try_parse_number(t);
+			if (parsed[0]) { emit(({"lit", parsed[1]})); continue; }
 			emit(({"call", t}));
     }
 	}

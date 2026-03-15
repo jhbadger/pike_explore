@@ -25,4 +25,4 @@
 **Misc prims worth adding**
 - `depth` — sizeof(stack)
 - `u.` / `.r` / `u.r` — formatted number output
-- `hex` / `decimal` — switch number base
+
