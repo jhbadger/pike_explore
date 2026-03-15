@@ -1,6 +1,8 @@
 \ -- Variable and Constant defined in Forth ------------------------
 : variable create 1 allot does> ;
 : constant create ! does> @ ;
+: ? @ . ;
+
 
 \ - Boolean constants ----------------------------------------------
 -1 constant true
