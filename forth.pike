@@ -306,7 +306,10 @@ class Forth {
 				emit(({"call", "__create__"}));
 				continue;
 			}
-
+			if (t == "recurse") {
+				emit(({"call", current}));
+				continue;
+			}
 			if (t == "if") {
 				emit(({"0branch", 0}));
 				cstack += ({sizeof(prog)-1});
