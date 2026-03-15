@@ -167,20 +167,18 @@ class Forth {
     }
     error("Unterminated .\" string\n");
 	}
-	
+
 	void process(array tokens) {
-		for (int i = 0; i < sizeof(tokens); i++) {
+    for (int i = 0; i < sizeof(tokens); i++) {
 			string t = tokens[i];
 
 			// \ comment: skip rest of token array (rest of line)
 			if (t == "\\") break;
 
 			// ( comment: skip tokens until closing )
-			// ( comment: skip tokens until closing )
 			if (t == "(") {
-				i++;  // move past "("
+				i++;
 				while (i < sizeof(tokens) && tokens[i] != ")") i++;
-				// i now points at ")" (or end), continue will increment past it
 				continue;
 			}
 			if (t == ".\"") {
@@ -219,15 +217,19 @@ class Forth {
 						write(": %s\n", name);
 						foreach(code, array ins) {
 							switch(ins[0]) {
-							case "lit":     write("  lit %d\n", ins[1]);    break;
-							case "strlit":  write("  .\" %s\"\n", ins[1]);  break;
-							case "call":    write("  %s\n", ins[1]);         break;
-							case "branch":  write("  branch %d\n", ins[1]); break;
-							case "0branch": write("  0branch %d\n", ins[1]);break;
-							case "(do)":    write("  do\n");                 break;
-							case "(loop)":  write("  loop\n");               break;
-							case "exit":    write("  exit\n");               break;
-							default:        write("  %O\n", ins);            break;
+							case "lit":          write("  lit %d\n", ins[1]);        break;
+							case "strlit":       write("  .\" %s\"\n", ins[1]);      break;
+							case "call":         write("  %s\n", ins[1]);            break;
+							case "branch":       write("  branch %d\n", ins[1]);     break;
+							case "0branch":      write("  0branch %d\n", ins[1]);    break;
+							case "(do)":         write("  do\n");                    break;
+							case "(loop)":       write("  loop\n");                  break;
+							case "exit":         write("  exit\n");                  break;
+							case "locals-enter": write("  { %s -- }\n", ins[2] * " "); break;
+							case "locals-exit":                                      break;
+							case "local@":       write("  %s\n", ins[2]);            break;
+							case "local!":       write("  -> %s\n", ins[2]);         break;
+							default:             write("  %O\n", ins);               break;
 							}
 						}
 						if (entry[0] == "defining") {
@@ -246,7 +248,7 @@ class Forth {
 					}
 					continue;
 				}
-				
+
 				if (t == ":") {
 					current  = tokens[++i];
 					prog     = ({});
@@ -261,28 +263,23 @@ class Forth {
 					heap += ({0});
 					array does_code = dict[t][2];
 					dict[new_name] = ({"create", body_addr, does_code});
-					push(body_addr);   // init_code expects body addr on stack
-					run(dict[t][1]);   // run the init_code (before does>)
+					push(body_addr);
+					run(dict[t][1]);
 					continue;
 				}
-				
+
 				run_word(t);
 				continue;
 			}
 
 			/* ── compile mode ── */
 
-			if (t == "create") {
-				// Nothing to emit — just skip it in the compiled body.
-				continue;
-			}
-
 			if (t == ";") {
 				if (sizeof(locals) > 0)
 					emit(({"locals-exit"}));
 				emit(({"exit"}));
-				locals = ({});   // clear locals for next definition
-				
+				locals = ({});
+
 				if (does_pos >= 0) {
 					array init_code = prog[..does_pos-1];
 					array does_code = prog[does_pos..];
@@ -294,22 +291,21 @@ class Forth {
 				does_pos  = -1;
 				continue;
 			}
-			
+
 			if (t == "does>") {
-				// Mark the split point — everything after here is does_code
 				does_pos = sizeof(prog);
 				continue;
 			}
 
 			if (t == "create") {
-				// Compile a call to the runtime CREATE primitive
-				emit(({"call", "__create__"}));
 				continue;
 			}
+
 			if (t == "recurse") {
 				emit(({"call", current}));
 				continue;
 			}
+
 			if (t == "if") {
 				emit(({"0branch", 0}));
 				cstack += ({sizeof(prog)-1});
@@ -347,15 +343,14 @@ class Forth {
 					if (tokens[i] == "}") break;
 					all += ({tokens[i]});
 				}
-				// split on -- and keep only the left side
 				array names = ({});
 				foreach(all, string tok) {
 					if (tok == "--") break;
 					names += ({tok});
 				}
-				emit(({"locals-enter", sizeof(names)}));
+				emit(({"locals-enter", sizeof(names), names}));
 				for (int j = sizeof(names)-1; j >= 0; j--)
-					emit(({"local!", j}));
+					emit(({"local!", j, names[j]}));
 				locals = names;
 				continue;
 			}
@@ -363,23 +358,22 @@ class Forth {
 			// check if token is a known local
 			int local_idx = search(locals, t);
 			if (local_idx >= 0) {
-				emit(({"local@", local_idx}));
+				emit(({"local@", local_idx, t}));
 				continue;
 			}
-			
-			// check for local store:  n -> localname  (using -> as store syntax)
+
 			if (t == "->") {
 				string lname = tokens[++i];
 				int lidx = search(locals, lname);
 				if (lidx < 0) error("Unknown local: %s\n", lname);
-				emit(({"local!", lidx}));
+				emit(({"local!", lidx, lname}));
 				continue;
 			}
-			
+
 			int n;
 			if (sscanf(t, "%d", n)) { emit(({"lit", n})); continue; }
 			emit(({"call", t}));
-		}
+    }
 	}
 
 	void repl() {
