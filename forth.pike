@@ -3,7 +3,6 @@ class Forth {
 
 	array stack = ({});
 	array rstack = ({});
-	array heap = ({});
 	array locals = ({});
 	mapping dict = ([]);
 
@@ -11,8 +10,11 @@ class Forth {
 	string current;
 	array prog = ({});
 	array cstack = ({});
-	int does_pos = -1;   // NEW: position in prog where does> starts
-	int base = 10;
+	int does_pos = -1;   
+
+	// allocate base on the heap
+	int base_addr = 0;
+	array heap = ({10});  // default decimal
 
 	mixed pop() {
     if (sizeof(stack) == 0) error("Stack underflow\n");
@@ -42,14 +44,15 @@ class Forth {
 	}
 
 	array try_parse_number(string t) {
+    int b = heap[base_addr];
     int neg = (sizeof(t) > 0 && t[0] == '-');
     string s = neg ? t[1..] : t;
     if (sizeof(s) == 0) return ({0, 0});
     int n = 0;
     foreach(s / "", string c) {
 			int d = search("0123456789abcdef", lower_case(c));
-			if (d < 0 || d >= base) return ({0, 0});
-			n = n * base + d;
+			if (d < 0 || d >= b) return ({0, 0});
+			n = n * b + d;
     }
     return ({1, neg ? -n : n});
 	}
@@ -88,7 +91,6 @@ class Forth {
 					if (f[0] < f[1]) pc = ins[1]-1;
 					else rpop(); }
 				break;
-				// NEW: push a heap address (body pointer for created words)
 			case "push-addr":
 				push(ins[1]);
 				break;
@@ -97,6 +99,7 @@ class Forth {
 	}
 
 	void run_word(string w) {
+		w = lower_case(w);
     if (dict[w]) {
 			array entry = dict[w];
 			if (entry[0] == "prim") {
@@ -141,12 +144,11 @@ class Forth {
 		dict["0="] = ({"prim", lambda(){ push(pop()==0); }});
 
 		/* bases */
-		dict["hex"]     = ({"prim", lambda(){ base = 16; }});
-		dict["decimal"] = ({"prim", lambda(){ base = 10; }});
-		dict["octal"]   = ({"prim", lambda(){ base = 8;  }});
-		dict["binary"]  = ({"prim", lambda(){ base = 2;  }});
-		dict["base"]    = ({"prim", lambda(){ push(base); }});
-		dict["base!"]   = ({"prim", lambda(){ base = pop(); }});
+		dict["base"] = ({"prim", lambda(){ push(base_addr); }});
+		dict["hex"]     = ({"prim", lambda(){ heap[base_addr] = 16; }});
+		dict["decimal"] = ({"prim", lambda(){ heap[base_addr] = 10; }});
+		dict["octal"]   = ({"prim", lambda(){ heap[base_addr] = 8;  }});
+		dict["binary"]  = ({"prim", lambda(){ heap[base_addr] = 2;  }});
 
 		/* memory */
 		dict["@"] = ({"prim", lambda(){
@@ -161,13 +163,13 @@ class Forth {
 			heap[addr] = val;
 		}});
 
-		/* NEW: cell arithmetic for array access */
 		dict["cell+"] = ({"prim", lambda(){ push(pop() + 1); }});
 		dict["cells"] = ({"prim", lambda(){ /* cells are 1 unit each, no-op */ }});
 
 		/* output */
-		dict["."]     = ({"prim", lambda(){ write("%s ", format_int(pop(),
-																																base)); }});
+		dict["."]     = dict["."] = ({"prim", lambda(){
+			write("%s ", format_int(pop(), heap[base_addr])); }});
+		
 		dict["emit"]  = ({"prim", lambda(){ write("%c", pop()); }});
 		dict["cr"]    = ({"prim", lambda(){ write("\n"); }});
 		dict[".s"]    = ({"prim", lambda(){ write("Stack: %O\n", stack); }});
@@ -202,7 +204,7 @@ class Forth {
 
 	void process(array tokens) {
     for (int i = 0; i < sizeof(tokens); i++) {
-			string t = tokens[i];
+			string t = lower_case(tokens[i]);
 
 			// \ comment: skip rest of token array (rest of line)
 			if (t == "\\") break;
@@ -236,7 +238,7 @@ class Forth {
 				}
 
 				if (t == "see") {
-					string name = tokens[++i];
+					string name = lower_case(tokens[++i]);
 					if (!dict[name]) {
 						write("Unknown word: %s\n", name);
 						continue;
@@ -282,7 +284,7 @@ class Forth {
 				}
 
 				if (t == ":") {
-					current  = tokens[++i];
+					current  = lower_case(tokens[++i]);
 					prog     = ({});
 					does_pos = -1;
 					compiling = 1;
@@ -290,7 +292,7 @@ class Forth {
 				}
 
 				if (dict[t] && dict[t][0] == "defining") {
-					string new_name = tokens[++i];
+					string new_name = lower_case(tokens[++i]);
 					int body_addr = sizeof(heap);
 					heap += ({0});
 					array does_code = dict[t][2];
