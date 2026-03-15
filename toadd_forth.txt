@@ -1,0 +1,28 @@
+**loops**
+- `begin/until`, `begin/while/repeat` 
+- `leave` — early `do` loop exit, also needs compiler support
+- `+loop` — also needs compiler support
+- `j` — outer loop index, needs runtime support
+
+**Execution tokens**
+- `'` and `execute` — can't be done in stdlib, needs a representation for words as first-class values. Opens up deferred words, callbacks, table dispatch
+- `defer`/`is` naturally follow from those
+
+**I/O**
+- `key` — trivial to add as a prim
+- `accept` — read a string into a buffer
+
+**String support**
+- `s"` — addr/len strings; everything else (type, count, etc.) could then live in stdlib
+- Without this, string handling is basically absent
+
+**Bitwise ops**
+- `and`/`or` stdlib defines these arithmetically (`* 0= 0=`) which works for flags but breaks on arbitrary bitmasks — `&`, `|`, `^`, `~` as prims would be correct
+
+**Return stack**
+- `r@` — peek without consuming, one-liner prim
+
+**Misc prims worth adding**
+- `depth` — sizeof(stack)
+- `u.` / `.r` / `u.r` — formatted number output
+- `hex` / `decimal` — switch number base
