@@ -165,7 +165,10 @@ class Forth {
 
 		dict["cell+"] = ({"prim", lambda(){ push(pop() + 1); }});
 		dict["cells"] = ({"prim", lambda(){ /* cells are 1 unit each, no-op */ }});
-
+		dict[","]    = ({"prim", lambda(){ heap += ({pop()}); }});
+		dict["here"] = ({"prim", lambda(){ push(sizeof(heap)); }});
+		dict["c,"]   = ({"prim", lambda(){ heap += ({pop()}); }});  // same as , in a cell-based forth
+		
 		/* output */
 		dict["."]     = dict["."] = ({"prim", lambda(){
 			write("%s ", format_int(pop(), heap[base_addr])); }});
@@ -236,7 +239,14 @@ class Forth {
 					}
 					continue;
 				}
-
+				if (t == "create") {
+					string new_name = tokens[++i];
+					int body_addr = sizeof(heap);
+					heap += ({0});
+					dict[new_name] = ({"create", body_addr, ({})});
+					push(body_addr);
+					continue;
+				}
 				if (t == "see") {
 					string name = lower_case(tokens[++i]);
 					if (!dict[name]) {
